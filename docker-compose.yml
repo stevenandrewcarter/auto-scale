@@ -1,0 +1,81 @@
+---
+version: '3.3'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION}
+    env_file: ./app/elasticsearch/elasticsearch.env      
+    ports: ['9200:9200']
+    networks: ['stack']
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:${ES_VERSION}
+    env_file: ./app/logstash/logstash.env
+    depends_on: ["elasticsearch", "kafka"]
+    networks: ["stack"]
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ES_VERSION}
+    env_file: ./app/kibana/kibana.env
+    networks: ['stack']
+    depends_on: ['elasticsearch']
+
+  zookeeper:
+    image: zookeeper
+    networks: ['stack']
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    networks: ['stack']
+    depends_on: ['zookeeper']
+    ports:
+      - target: 9094
+        published: 9094
+        protocol: tcp
+        mode: host
+    env_file: ./app/kafka/kafka.env      
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:${ES_VERSION}
+    volumes:
+      - type: "bind"
+        source: /proc
+        target: /hostfs/proc
+        # readonly: true
+      - type: "bind"
+        source: /sys/fs/cgroup
+        target: /hostfs/sys/fs/cgroup
+        # readonly: true
+      - type: "bind"
+        source: /
+        target: /hostfs
+        # readonly: true
+      - /var/run/docker.sock:/var/run/docker.sock
+    user: root
+    networks: ['stack']
+    depends_on: ['elasticsearch']
+    # command: -system.hostfs=/hostfs
+    configs:
+      - source: metricbeat_config
+        target: /usr/share/metricbeat/metricbeat.yml
+
+  nginx:
+    image: nginx:alpine
+    ports: ['80:80']
+    networks: ['stack']
+    depends_on: ['elasticsearch']
+    configs:
+      - source: nginx_config
+        target: /etc/nginx/conf.d/default.conf
+
+networks: 
+  stack:
+
+configs:
+  metricbeat_config:
+    file: ./app/metricbeat/metricbeat.yml
+  nginx_config:
+    file: ./app/nginx/default.conf
